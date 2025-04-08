@@ -69,6 +69,7 @@ export class MemStorage implements IStorage {
       id: userId,
       password: hashedPassword,
       createdAt: now,
+      bankAccount: insertUser.bankAccount || null,
     };
     
     this.users.set(userId, user);
@@ -105,6 +106,8 @@ export class MemStorage implements IStorage {
       ...insertTransaction,
       id,
       createdAt: now,
+      description: insertTransaction.description || null,
+      recipientId: insertTransaction.recipientId || null,
     };
     
     this.transactions.set(id, transaction);
@@ -144,6 +147,7 @@ export class MemStorage implements IStorage {
       ...insertBalance,
       id,
       updatedAt: now,
+      amount: insertBalance.amount || 0,
     };
     
     this.balances.set(id, balance);

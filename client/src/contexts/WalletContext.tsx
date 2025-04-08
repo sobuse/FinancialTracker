@@ -1,8 +1,27 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { Transaction } from "@shared/schema";
+import { Transaction, FundWalletData, WithdrawData, TransferData } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getWalletBalance, getTransactions, fundWallet, withdrawFromWallet, transferFunds } from "@/lib/api";
+
+// API response types
+interface BalanceResponse {
+  balance: number;
+}
+
+interface TransactionsResponse {
+  transactions: Transaction[];
+  pagination: {
+    total: number;
+    totalPages: number;
+    currentPage: number;
+  };
+}
+
+interface WalletOperationResponse {
+  balance: number;
+  transaction: Transaction;
+}
 
 interface WalletContextType {
   balance: number;
@@ -61,31 +80,33 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [isCardPaymentModalOpen, setIsCardPaymentModalOpen] = useState<boolean>(false);
   
   // Fetch balance
-  const balanceQuery = useQuery({
+  const balanceQuery = useQuery<BalanceResponse>({
     queryKey: ['/api/wallet/balance'],
     enabled: isAuthenticated,
     staleTime: 60000, // 1 minute
   });
   
   // Fetch transactions
-  const transactionsQuery = useQuery({
+  const transactionsQuery = useQuery<TransactionsResponse>({
     queryKey: ['/api/transactions', currentPage],
     enabled: isAuthenticated,
     staleTime: 60000, // 1 minute
   });
   
   // Fund wallet mutation
-  const fundMutation = useMutation({
+  const fundMutation = useMutation<WalletOperationResponse, Error, FundWalletData>({
     mutationFn: fundWallet,
     onSuccess: (data) => {
-      setBalance(data.balance);
-      toast({
-        title: "Success",
-        description: "Your wallet has been funded successfully!",
-      });
-      queryClient.invalidateQueries({ queryKey: ['/api/wallet/balance'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
-      closeCardPaymentModal();
+      if (data && data.balance !== undefined) {
+        setBalance(data.balance);
+        toast({
+          title: "Success",
+          description: "Your wallet has been funded successfully!",
+        });
+        queryClient.invalidateQueries({ queryKey: ['/api/wallet/balance'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+        closeCardPaymentModal();
+      }
     },
     onError: (error: any) => {
       toast({
@@ -97,17 +118,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   });
   
   // Withdraw funds mutation
-  const withdrawMutation = useMutation({
+  const withdrawMutation = useMutation<WalletOperationResponse, Error, WithdrawData>({
     mutationFn: withdrawFromWallet,
     onSuccess: (data) => {
-      setBalance(data.balance);
-      toast({
-        title: "Success",
-        description: "Withdrawal initiated successfully!",
-      });
-      queryClient.invalidateQueries({ queryKey: ['/api/wallet/balance'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
-      closeWithdrawModal();
+      if (data && data.balance !== undefined) {
+        setBalance(data.balance);
+        toast({
+          title: "Success",
+          description: "Withdrawal initiated successfully!",
+        });
+        queryClient.invalidateQueries({ queryKey: ['/api/wallet/balance'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+        closeWithdrawModal();
+      }
     },
     onError: (error: any) => {
       toast({
@@ -119,17 +142,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   });
   
   // Transfer funds mutation
-  const transferMutation = useMutation({
+  const transferMutation = useMutation<WalletOperationResponse, Error, TransferData>({
     mutationFn: transferFunds,
     onSuccess: (data) => {
-      setBalance(data.balance);
-      toast({
-        title: "Success",
-        description: "Transfer completed successfully!",
-      });
-      queryClient.invalidateQueries({ queryKey: ['/api/wallet/balance'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
-      closeTransferModal();
+      if (data && data.balance !== undefined) {
+        setBalance(data.balance);
+        toast({
+          title: "Success",
+          description: "Transfer completed successfully!",
+        });
+        queryClient.invalidateQueries({ queryKey: ['/api/wallet/balance'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
+        closeTransferModal();
+      }
     },
     onError: (error: any) => {
       toast({
@@ -142,16 +167,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   
   // Update state from queries
   useEffect(() => {
-    if (balanceQuery.data) {
+    if (balanceQuery.data && balanceQuery.data.balance !== undefined) {
       setBalance(balanceQuery.data.balance);
     }
   }, [balanceQuery.data]);
   
   useEffect(() => {
     if (transactionsQuery.data) {
-      setTransactions(transactionsQuery.data.transactions);
-      setTotalTransactions(transactionsQuery.data.pagination.total);
-      setTotalPages(transactionsQuery.data.pagination.totalPages);
+      setTransactions(transactionsQuery.data.transactions || []);
+      setTotalTransactions(transactionsQuery.data.pagination?.total || 0);
+      setTotalPages(transactionsQuery.data.pagination?.totalPages || 0);
     }
   }, [transactionsQuery.data]);
   
