@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { registerSchema } from "@shared/schema";
+import { z } from "zod";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -26,11 +26,19 @@ export default function RegisterForm() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
-  // Extend the schema to include terms checkbox
-  const formSchema = registerSchema.extend({
+  // Create a complete schema with terms checkbox
+  const formSchema = z.object({
+    fullName: z.string().min(1, "Full name is required"),
+    username: z.string().min(3, "Username must be at least 3 characters"),
+    email: z.string().email("Invalid email address"),
+    password: z.string().min(6, "Password must be at least 6 characters"),
+    confirmPassword: z.string(),
     terms: z.boolean().refine(val => val === true, {
       message: "You must agree to the terms and conditions",
     }),
+  }).refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
   });
 
   const form = useForm<RegisterFormData>({
