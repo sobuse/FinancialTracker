@@ -1,6 +1,8 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpec from './swagger';
 
 const app = express();
 app.use(express.json());
@@ -37,6 +39,14 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Setup Swagger UI
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+  }));
+  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

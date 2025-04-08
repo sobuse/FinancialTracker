@@ -11,7 +11,94 @@ import {
   fundWalletSchema,
   withdrawSchema,
   transferSchema,
+  type User,
+  type Transaction,
 } from "@shared/schema";
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     User:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: integer
+ *           description: The user ID
+ *         username:
+ *           type: string
+ *           description: The username
+ *         email:
+ *           type: string
+ *           description: The user's email
+ *         fullName:
+ *           type: string
+ *           description: The user's full name
+ *       example:
+ *         id: 1
+ *         username: john_doe
+ *         email: john@example.com
+ *         fullName: John Doe
+ *     
+ *     Transaction:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: integer
+ *           description: The transaction ID
+ *         userId:
+ *           type: integer
+ *           description: The user ID associated with this transaction
+ *         type:
+ *           type: string
+ *           enum: [deposit, withdrawal, transfer]
+ *           description: Type of transaction
+ *         amount:
+ *           type: number
+ *           description: Transaction amount
+ *         description:
+ *           type: string
+ *           description: Description of the transaction
+ *         status:
+ *           type: string
+ *           enum: [pending, completed, failed]
+ *           description: Status of the transaction
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *           description: When the transaction was created
+ *       example:
+ *         id: 1
+ *         userId: 1
+ *         type: deposit
+ *         amount: 500
+ *         description: Wallet funding
+ *         status: completed
+ *         createdAt: 2023-01-01T00:00:00.000Z
+ *   
+ *     Balance:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: integer
+ *           description: The balance ID
+ *         userId:
+ *           type: integer
+ *           description: The user ID associated with this balance
+ *         amount:
+ *           type: number
+ *           description: Current balance amount
+ *       example:
+ *         id: 1
+ *         userId: 1
+ *         amount: 1000
+ *
+ *   securitySchemes:
+ *     bearerAuth:
+ *       type: http
+ *       scheme: bearer
+ *       bearerFormat: JWT
+ */
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || "credpal-secret-key";
@@ -48,7 +135,65 @@ const handleZodError = (err: unknown, res: Response) => {
 export async function registerRoutes(app: Express): Promise<Server> {
   const router = express.Router();
   
-  // Auth routes
+  /**
+   * @swagger
+   * /auth/register:
+   *   post:
+   *     summary: Register a new user
+   *     tags: [Auth]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - username
+   *               - email
+   *               - password
+   *               - confirmPassword
+   *               - fullName
+   *               - terms
+   *             properties:
+   *               username:
+   *                 type: string
+   *                 description: Unique username
+   *               email:
+   *                 type: string
+   *                 format: email
+   *                 description: User email
+   *               password:
+   *                 type: string
+   *                 format: password
+   *                 minLength: 6
+   *                 description: User password
+   *               confirmPassword:
+   *                 type: string
+   *                 format: password
+   *                 description: Password confirmation
+   *               fullName:
+   *                 type: string
+   *                 description: User's full name
+   *               terms:
+   *                 type: boolean
+   *                 description: Acceptance of terms and conditions
+   *     responses:
+   *       201:
+   *         description: User registered successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                 user:
+   *                   $ref: '#/components/schemas/User'
+   *                 token:
+   *                   type: string
+   *       400:
+   *         description: Invalid input or email/username already taken
+   */
   router.post("/auth/register", async (req: Request, res: Response) => {
     try {
       const data = registerSchema.parse(req.body);
@@ -87,6 +232,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  /**
+   * @swagger
+   * /auth/login:
+   *   post:
+   *     summary: Login a user
+   *     tags: [Auth]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - email
+   *               - password
+   *             properties:
+   *               email:
+   *                 type: string
+   *                 format: email
+   *                 description: User email
+   *               password:
+   *                 type: string
+   *                 format: password
+   *                 description: User password
+   *     responses:
+   *       200:
+   *         description: Login successful
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                 user:
+   *                   $ref: '#/components/schemas/User'
+   *                 token:
+   *                   type: string
+   *       401:
+   *         description: Invalid email or password
+   */
   router.post("/auth/login", async (req: Request, res: Response) => {
     try {
       const { email, password } = loginSchema.parse(req.body);
@@ -116,6 +302,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // User routes
+  /**
+   * @swagger
+   * /users/me:
+   *   get:
+   *     summary: Get current authenticated user's profile
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: User profile retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 user:
+   *                   $ref: '#/components/schemas/User'
+   *                 balance:
+   *                   type: number
+   *                   description: User's wallet balance
+   *       401:
+   *         description: Unauthorized - Invalid or missing token
+   *       404:
+   *         description: User not found
+   */
   router.get("/users/me", authenticate, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId;
@@ -144,6 +356,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Wallet routes
+  /**
+   * @swagger
+   * /wallet/balance:
+   *   get:
+   *     summary: Get user's wallet balance
+   *     tags: [Wallet]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Balance retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 balance:
+   *                   type: number
+   *                   description: User's current balance
+   *       401:
+   *         description: Unauthorized - Invalid or missing token
+   *       404:
+   *         description: Balance not found
+   */
   router.get("/wallet/balance", authenticate, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId;
@@ -159,6 +395,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  /**
+   * @swagger
+   * /wallet/fund:
+   *   post:
+   *     summary: Fund the user's wallet
+   *     tags: [Wallet]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - amount
+   *             properties:
+   *               amount:
+   *                 type: number
+   *                 description: Amount to fund
+   *     responses:
+   *       200:
+   *         description: Wallet funded successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                 transaction:
+   *                   $ref: '#/components/schemas/Transaction'
+   *                 balance:
+   *                   type: number
+   *                   description: Updated balance
+   *       400:
+   *         description: Invalid amount
+   *       401:
+   *         description: Unauthorized - Invalid or missing token
+   */
   router.post("/wallet/fund", authenticate, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId;
@@ -223,6 +499,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Transaction routes
+  /**
+   * @swagger
+   * /transactions:
+   *   get:
+   *     summary: Get user's transaction history
+   *     tags: [Transactions]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *         description: Page number
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 10
+   *         description: Number of items per page
+   *     responses:
+   *       200:
+   *         description: List of transactions
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 transactions:
+   *                   type: array
+   *                   items:
+   *                     $ref: '#/components/schemas/Transaction'
+   *                 pagination:
+   *                   type: object
+   *                   properties:
+   *                     total:
+   *                       type: integer
+   *                       description: Total number of transactions
+   *                     page:
+   *                       type: integer
+   *                       description: Current page
+   *                     limit:
+   *                       type: integer
+   *                       description: Number of items per page
+   *                     totalPages:
+   *                       type: integer
+   *                       description: Total number of pages
+   *       401:
+   *         description: Unauthorized - Invalid or missing token
+   */
   router.get("/transactions", authenticate, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId;
