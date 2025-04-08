@@ -1,80 +1,50 @@
-import { users, transactions, balances } from "@shared/schema";
-import type { User, InsertUser, Transaction, InsertTransaction, Balance, InsertBalance } from "@shared/schema";
-import { nanoid } from "nanoid";
+import { 
+  users, 
+  transactions, 
+  balances, 
+  type User, 
+  type InsertUser, 
+  type Transaction, 
+  type InsertTransaction, 
+  type Balance, 
+  type InsertBalance 
+} from "@shared/schema";
+import { db } from "./db";
+import { eq, desc, and, sql, count } from "drizzle-orm";
 import { compare, hash } from "bcryptjs";
+import { nanoid } from "nanoid";
+import { IStorage } from "./storage";
 
-export interface IStorage {
-  // User operations
-  getUser(id: number): Promise<User | undefined>;
-  getUserByEmail(email: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  
-  // Authentication
-  validateCredentials(email: string, password: string): Promise<User | null>;
-  
-  // Transaction operations
-  createTransaction(transaction: InsertTransaction): Promise<Transaction>;
-  getTransactionsByUserId(userId: number, page?: number, limit?: number): Promise<{ transactions: Transaction[], total: number }>;
-  getTransactionById(id: number): Promise<Transaction | undefined>;
-  
-  // Balance operations
-  getBalanceByUserId(userId: number): Promise<Balance | undefined>;
-  createBalance(balance: InsertBalance): Promise<Balance>;
-  updateBalance(userId: number, amount: number): Promise<Balance>;
-  
-  // Wallet operations
-  fundWallet(userId: number, amount: number): Promise<Transaction>;
-  withdrawFromWallet(userId: number, amount: number, bankAccount: string, bankName: string): Promise<Transaction>;
-  transferFunds(senderId: number, recipientEmail: string, amount: number, description?: string): Promise<Transaction>;
-}
-
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private transactions: Map<number, Transaction>;
-  private balances: Map<number, Balance>;
-  private currentUserId: number;
-  private currentTransactionId: number;
-  private currentBalanceId: number;
-
-  constructor() {
-    this.users = new Map();
-    this.transactions = new Map();
-    this.balances = new Map();
-    this.currentUserId = 1;
-    this.currentTransactionId = 1;
-    this.currentBalanceId = 1;
-  }
-
+export class DatabaseStorage implements IStorage {
   // User operations
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(user => user.email === email);
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(user => user.username === username);
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const hashedPassword = await hash(insertUser.password, 10);
-    const userId = this.currentUserId++;
-    const now = new Date();
     
-    const user: User = {
-      ...insertUser,
-      id: userId,
-      password: hashedPassword,
-      createdAt: now,
-    };
+    // Create user with hashed password
+    const [user] = await db
+      .insert(users)
+      .values({ ...insertUser, password: hashedPassword })
+      .returning();
     
-    this.users.set(userId, user);
-    
-    // Create initial balance for user
-    await this.createBalance({ userId, amount: 0 });
+    // Create initial balance for the user
+    await db
+      .insert(balances)
+      .values({ userId: user.id, amount: 0 });
     
     return user;
   }
@@ -98,73 +68,80 @@ export class MemStorage implements IStorage {
 
   // Transaction operations
   async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
-    const id = this.currentTransactionId++;
-    const now = new Date();
-    
-    const transaction: Transaction = {
-      ...insertTransaction,
-      id,
-      createdAt: now,
-    };
-    
-    this.transactions.set(id, transaction);
+    const [transaction] = await db
+      .insert(transactions)
+      .values(insertTransaction)
+      .returning();
     
     return transaction;
   }
 
   async getTransactionsByUserId(userId: number, page = 1, limit = 10): Promise<{ transactions: Transaction[], total: number }> {
-    const userTransactions = Array.from(this.transactions.values())
-      .filter(transaction => transaction.userId === userId || transaction.recipientId === userId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    // Get total count
+    const [result] = await db
+      .select({ value: count() })
+      .from(transactions)
+      .where(
+        sql`${transactions.userId} = ${userId} OR ${transactions.recipientId} = ${userId}`
+      );
     
-    const total = userTransactions.length;
-    const start = (page - 1) * limit;
-    const end = start + limit;
+    const total = Number(result?.value || 0);
+    
+    // Get paginated transactions
+    const transactionList = await db
+      .select()
+      .from(transactions)
+      .where(
+        sql`${transactions.userId} = ${userId} OR ${transactions.recipientId} = ${userId}`
+      )
+      .orderBy(desc(transactions.createdAt))
+      .limit(limit)
+      .offset((page - 1) * limit);
     
     return {
-      transactions: userTransactions.slice(start, end),
+      transactions: transactionList,
       total
     };
   }
 
   async getTransactionById(id: number): Promise<Transaction | undefined> {
-    return this.transactions.get(id);
+    const [transaction] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, id));
+    
+    return transaction;
   }
 
   // Balance operations
   async getBalanceByUserId(userId: number): Promise<Balance | undefined> {
-    return Array.from(this.balances.values()).find(balance => balance.userId === userId);
+    const [balance] = await db
+      .select()
+      .from(balances)
+      .where(eq(balances.userId, userId));
+    
+    return balance;
   }
 
   async createBalance(insertBalance: InsertBalance): Promise<Balance> {
-    const id = this.currentBalanceId++;
-    const now = new Date();
-    
-    const balance: Balance = {
-      ...insertBalance,
-      id,
-      updatedAt: now,
-    };
-    
-    this.balances.set(id, balance);
+    const [balance] = await db
+      .insert(balances)
+      .values(insertBalance)
+      .returning();
     
     return balance;
   }
 
   async updateBalance(userId: number, amount: number): Promise<Balance> {
-    const balance = await this.getBalanceByUserId(userId);
+    const [updatedBalance] = await db
+      .update(balances)
+      .set({ amount, updatedAt: new Date() })
+      .where(eq(balances.userId, userId))
+      .returning();
     
-    if (!balance) {
+    if (!updatedBalance) {
       throw new Error(`No balance found for user ${userId}`);
     }
-    
-    const updatedBalance: Balance = {
-      ...balance,
-      amount,
-      updatedAt: new Date(),
-    };
-    
-    this.balances.set(balance.id, updatedBalance);
     
     return updatedBalance;
   }
@@ -268,9 +245,3 @@ export class MemStorage implements IStorage {
     return this.createTransaction(transaction);
   }
 }
-
-// Import the database storage
-import { DatabaseStorage } from "./databaseStorage";
-
-// Use DatabaseStorage instead of MemStorage
-export const storage = new DatabaseStorage();

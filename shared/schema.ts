@@ -1,6 +1,7 @@
-import { pgTable, text, serial, timestamp, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, doublePrecision, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { relations } from "drizzle-orm";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -14,22 +15,49 @@ export const users = pgTable("users", {
 
 export const transactions = pgTable("transactions", {
   id: serial("id").primaryKey(),
-  userId: serial("user_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id),
   amount: doublePrecision("amount").notNull(),
   type: text("type").notNull(), // 'deposit', 'withdrawal', 'transfer'
   status: text("status").notNull(), // 'pending', 'approved', 'rejected'
   description: text("description"),
-  recipientId: serial("recipient_id"), // for transfers
+  recipientId: integer("recipient_id").references(() => users.id), // for transfers
   transactionId: text("transaction_id").notNull().unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const balances = pgTable("balances", {
   id: serial("id").primaryKey(),
-  userId: serial("user_id").notNull().unique(),
+  userId: integer("user_id").notNull().unique().references(() => users.id),
   amount: doublePrecision("amount").notNull().default(0),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// Relations
+export const usersRelations = relations(users, ({ many, one }) => ({
+  transactions: many(transactions),
+  balance: one(balances, {
+    fields: [users.id],
+    references: [balances.userId],
+  }),
+}));
+
+export const transactionsRelations = relations(transactions, ({ one }) => ({
+  user: one(users, {
+    fields: [transactions.userId],
+    references: [users.id],
+  }),
+  recipient: one(users, {
+    fields: [transactions.recipientId],
+    references: [users.id],
+  }),
+}));
+
+export const balancesRelations = relations(balances, ({ one }) => ({
+  user: one(users, {
+    fields: [balances.userId],
+    references: [users.id],
+  }),
+}));
 
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
